@@ -1,0 +1,4 @@
+interface:
+  display_name: "Multi-Agent Orchestrator"
+  short_description: "Checklist-first master/subagent workflow"
+  default_prompt: "Use $multi-agent-orchestration to run this task with a checklist-first master/subagent workflow."

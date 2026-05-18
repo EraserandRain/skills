@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Staged Review"
+  short_description: "Review staged diff and draft commit message"
+  default_prompt: "Use $git-staged-commit-message to review staged changes and propose one English Conventional Commit message."

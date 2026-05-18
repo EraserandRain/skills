@@ -1,0 +1,4 @@
+interface:
+  display_name: "Karpathy Guidelines"
+  short_description: "Behavioral guardrails for surgical coding"
+  default_prompt: "Use $karpathy-guidelines to plan and implement this code change with explicit assumptions and verifiable checks."
