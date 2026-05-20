@@ -1,6 +1,57 @@
 # Templates
 
-## Master Checklist Template
+This file is the canonical source for reusable orchestration templates,
+checklist fields, status values, dispatch budget fields, and acceptance action
+shapes. Other references should summarize these contracts and link back here
+instead of copying full templates.
+
+## Compact Checklist Template
+
+Use this for a single explorer, a single worker, or a clearly isolated
+delegation where parallel dispatch, retries, and dependency management are not
+yet needed.
+
+```md
+# Checklist
+
+## Meta
+
+- objective:
+- owner: master
+- updated_at:
+- mode: compact
+- notes:
+
+## Items
+
+### ITEM-001
+
+- id: ITEM-001
+- goal:
+- status: todo
+- owner: unassigned
+- write_scope:
+  - path-or-area/
+- acceptance:
+  - command or check
+- done:
+  - condition
+- evidence:
+- notes:
+```
+
+Compact defaults:
+
+- `dependencies`: none
+- `write_blocklist`: none unless a boundary is risky
+- `retry_count`: 0
+- `failure_reason`: blank
+
+Expand a compact item to the full template before parallel dispatch, after a
+failed acceptance attempt, when dependencies become material, or when the write
+scope needs explicit allow/block boundaries.
+
+## Full Checklist Item Template
 
 ```md
 # Checklist
@@ -11,25 +62,20 @@
 - owner: master
 - updated_at:
 - acceptance_owner: master
+- mode: full
 - notes:
 
 ## Items
 
 ### ITEM-001
 
+- id: ITEM-001
 - title:
 - goal:
 - status: todo
-- phase:
-- lane:
-- risk:
-- parallel_weight:
-- owner:
+- owner: unassigned
 - dependencies:
-- conflicts_with:
-- env_lock:
-- gate_type:
-- unblock_condition:
+  - none
 - write_allowlist:
   - path/
 - write_blocklist:
@@ -46,8 +92,54 @@
 - notes:
 ```
 
+## Parallel Dispatch Budget Appendix
+
+Add this to checklist `Meta` before opening more than one worker:
+
+```md
+- dispatch_budget:
+  - active_worker_cap: 2
+  - max_low_risk_cap: 3
+  - submitted_backlog_cap: 2
+  - total_parallel_budget: 4
+```
+
+## Concurrency Fields Appendix
+
+Add these fields before opening more than one worker, or when shared
+foundations, dependencies, or environment locks need explicit coordination:
+
+```md
+- phase:
+- lane:
+- risk:
+- parallel_weight:
+- conflicts_with:
+  - ITEM-000
+- env_lock:
+- gate_type:
+```
+
+Add `unblock_condition` only when `status = blocked`:
+
+```md
+- unblock_condition:
+```
+
 Rules:
 
+- Compact item fields: `id`, `goal`, `status`, `owner`, `write_scope`,
+  `acceptance`, `done`, and `evidence`.
+- Full item fields: `id`, `goal`, `status`, `owner`,
+  `dependencies`, `write_allowlist`, `write_blocklist`, `acceptance_commands`,
+  `done_definition`, `evidence`, `retry_count`, and `failure_reason`.
+- Concurrency-only fields before opening more than one worker: `phase`, `lane`,
+  `risk`, `parallel_weight`, `conflicts_with`, `env_lock`, and `gate_type`.
+- Parallel meta fields before opening more than one worker:
+  `active_worker_cap`, `max_low_risk_cap`, `submitted_backlog_cap`, and
+  `total_parallel_budget`.
+- Use owner values that remain traceable: `master`, `unassigned`, or
+  `worker:<agent-id-or-nickname>`.
 - Restrict `status` to the agreed enum.
 - Let only the master update `retry_count`.
 - Use `phase`, `lane`, and `parallel_weight` before dispatching more than one
@@ -56,6 +148,31 @@ Rules:
   config; use `soft` for isolated follow-up work.
 - Use `unblock_condition` only when `status = blocked`.
 - Keep `evidence` short and referential, not a full log dump.
+
+## Git / Worktree Preflight Template
+
+Use this before dispatching implementation workers in a git repository.
+
+```md
+# Worktree Baseline
+
+- baseline_command: git status --short
+- staged_state:
+- unstaged_state:
+- user_owned_changes:
+- protected_git_actions:
+  - do not stage unless explicitly asked
+  - do not unstage unless explicitly asked
+  - do not commit unless explicitly asked
+  - do not reset or rewrite history unless explicitly asked
+- acceptance_diff_check:
+  - compare changed files against baseline
+  - reject or reroute out-of-scope edits
+  - preserve unrelated user changes
+```
+
+For non-git workspaces, record the equivalent file-state boundary in plain
+language before dispatch.
 
 ## Execution Guardrails
 
@@ -85,6 +202,8 @@ Role contract:
 - Do not edit the checklist.
 - Do not modify files outside the write_allowlist.
 - Do not take over other checklist items.
+- You are not alone in the codebase: do not revert edits made by others, and
+  adapt your implementation to concurrent changes when they appear.
 
 Execution guardrails:
 - Make material assumptions and blockers explicit.
@@ -275,13 +394,29 @@ Actions:
 - update evidence
 - close current worker
 
-## Step 3B: Reject
+## Step 3B: Correct Current Worker Once
 
 Triggers:
 
-- acceptance command failed
-- done_definition not met
+- acceptance command failed for a small, clear, in-scope reason
+- done_definition is almost met and no checklist change is needed
+- current worker did not drift outside `write_allowlist`
+
+Actions:
+
+- keep status = assigned or submitted, depending on whether a new handoff is due
+- record concise failure evidence
+- send one bounded correction prompt with `send_input`
+- require the same final report format
+
+## Step 3C: Reject And Replace
+
+Triggers:
+
 - out-of-scope edits detected
+- implementation approach is wrong or unclear
+- same item failed after one bounded correction
+- checklist must be decomposed before more implementation
 - risk exceeds the allowed threshold
 
 Actions:
@@ -293,7 +428,7 @@ Actions:
 - close current worker
 - assign replacement worker
 
-## Step 3C: Block
+## Step 3D: Block
 
 Triggers:
 
@@ -305,7 +440,7 @@ Actions:
 
 - set status = blocked
 - record unblock_condition
-- close or pause current worker
+- close current worker
 ```
 
 Optional reject appendix:
@@ -344,7 +479,7 @@ replacement_agent_type:
 - no `write_allowlist` overlap exists with active workers
 - `conflicts_with` does not point to an active item
 - required `env_lock` is free
-- `parallel_weight` keeps the active total within budget
+- `parallel_weight` keeps the active total within `total_parallel_budget`
 - current `submitted` backlog is below the cap
 - no unresolved `hard` gate blocks the current phase
 

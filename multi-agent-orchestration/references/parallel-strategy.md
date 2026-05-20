@@ -3,6 +3,10 @@
 Use this guide when the master may open more than one worker, or when shared
 foundations must be stabilized before wider fan-out.
 
+Use `references/templates.md` as the canonical source for the checklist meta
+budget fields and per-item concurrency fields. This guide explains how to use
+those fields.
+
 ## Three-Layer Model
 
 - `phase`: define ordering. Use phases to keep shared contracts, entrypoints, or
@@ -59,7 +63,7 @@ and conflicts quickly.
 
 ## Budget Model
 
-Start with a total budget of `4`.
+Start with `dispatch_budget.total_parallel_budget: 4` in checklist meta.
 
 - `high` risk item -> `parallel_weight: 3`
 - `medium` risk item -> `parallel_weight: 2`
@@ -82,7 +86,7 @@ Open a new worker only when all of the following are true:
 - no active worker overlaps the item's `write_allowlist`
 - `conflicts_with` does not name an active item
 - required `env_lock` is free
-- adding the item keeps active `parallel_weight` within budget
+- adding the item keeps active `parallel_weight` within `total_parallel_budget`
 - the current `submitted` backlog is below the cap
 - no unresolved `hard` gate blocks the current phase
 
