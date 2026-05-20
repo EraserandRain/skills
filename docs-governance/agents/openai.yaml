@@ -1,0 +1,7 @@
+interface:
+  display_name: "Docs Governance"
+  short_description: "Organize docs and prevent drift"
+  default_prompt: "Use $docs-governance to decide where this documentation change belongs and whether related docs, examples, navigation, or agent rules need updates."
+
+policy:
+  allow_implicit_invocation: true

@@ -11,6 +11,7 @@ Each skill is a folder with a `SKILL.md` file, plus optional `references/` and
 - `markdown-linter-fixer` - fix Markdown lint issues with `markdownlint-cli2`.
 - `review-staged-commit` - review staged changes and draft one commit message.
 - `multi-agent-orchestration` - coordinate master/worker agent workflows.
+- `docs-governance` - organize docs and prevent documentation drift.
 
 ## Install
 
