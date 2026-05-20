@@ -9,7 +9,7 @@ Each skill is a folder with a `SKILL.md` file, plus optional `references/` and
 
 - `karpathy-guidelines` - simple guardrails for coding, debugging, and review.
 - `markdown-linter-fixer` - fix Markdown lint issues with `markdownlint-cli2`.
-- `git-staged-commit-message` - review staged changes and draft one commit message.
+- `review-staged-commit` - review staged changes and draft one commit message.
 - `multi-agent-orchestration` - coordinate master/worker agent workflows.
 
 ## Install
