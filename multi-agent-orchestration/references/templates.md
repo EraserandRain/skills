@@ -1,9 +1,9 @@
 # Templates
 
 This file is the canonical source for reusable orchestration templates,
-checklist fields, status values, dispatch budget fields, and acceptance action
-shapes. Other references should summarize these contracts and link back here
-instead of copying full templates.
+checklist fields, status values, dispatch budget fields, integration protocol
+fields, and acceptance action shapes. Other references should summarize these
+contracts and link back here instead of copying full templates.
 
 ## Compact Checklist Template
 
@@ -30,7 +30,7 @@ yet needed.
 - goal:
 - status: todo
 - owner: unassigned
-- write_scope:
+- write_allowlist:
   - path-or-area/
 - acceptance:
   - command or check
@@ -47,9 +47,51 @@ Compact defaults:
 - `retry_count`: 0
 - `failure_reason`: blank
 
-Expand a compact item to the full template before parallel dispatch, after a
-failed acceptance attempt, when dependencies become material, or when the write
-scope needs explicit allow/block boundaries.
+Stay compact by default. Use the lightweight parallel template for exactly two
+independent workers. Expand to the full template only before dispatching three
+or more workers, after a failed acceptance attempt, when dependencies become
+material, or when the write scope needs explicit allow/block boundaries.
+
+## Lightweight Parallel Checklist Template
+
+Use this when exactly two workers can run at the same time and their write
+scopes, acceptance commands, and expected outputs are clearly independent. If
+any of those checks are unclear, use the full checklist or keep delivery serial.
+
+```md
+# Checklist
+
+## Meta
+
+- objective:
+- owner: master
+- updated_at:
+- mode: lightweight_parallel
+- notes:
+
+## Items
+
+### ITEM-001
+
+- id: ITEM-001
+- goal:
+- status: todo
+- owner: unassigned
+- write_allowlist:
+  - path-or-area/
+- dependencies:
+  - none
+- acceptance:
+  - command or check
+- done:
+  - condition
+- evidence:
+- notes:
+```
+
+Do not add `dispatch_budget`, `phase`, `lane`, `env_lock`, or `gate_type` in
+lightweight parallel mode unless a concrete coordination risk appears. If that
+happens, expand the affected item to the full template.
 
 ## Full Checklist Item Template
 
@@ -94,26 +136,26 @@ scope needs explicit allow/block boundaries.
 
 ## Parallel Dispatch Budget Appendix
 
-Add this to checklist `Meta` before opening more than one worker:
+Add this to checklist `Meta` only in full parallel mode, usually before opening
+three or more workers or when shared foundations, retries, environment locks, or
+hard gates require explicit coordination:
 
 ```md
 - dispatch_budget:
   - active_worker_cap: 2
   - max_low_risk_cap: 3
   - submitted_backlog_cap: 2
-  - total_parallel_budget: 4
 ```
 
 ## Concurrency Fields Appendix
 
-Add these fields before opening more than one worker, or when shared
-foundations, dependencies, or environment locks need explicit coordination:
+Add these fields only in full parallel mode, or when shared foundations,
+dependencies, retries, or environment locks need explicit coordination:
 
 ```md
 - phase:
 - lane:
 - risk:
-- parallel_weight:
 - conflicts_with:
   - ITEM-000
 - env_lock:
@@ -128,26 +170,40 @@ Add `unblock_condition` only when `status = blocked`:
 
 Rules:
 
-- Compact item fields: `id`, `goal`, `status`, `owner`, `write_scope`,
+- Compact item fields: `id`, `goal`, `status`, `owner`, `write_allowlist`,
   `acceptance`, `done`, and `evidence`.
+- Lightweight parallel item fields: compact fields plus `dependencies`.
 - Full item fields: `id`, `goal`, `status`, `owner`,
   `dependencies`, `write_allowlist`, `write_blocklist`, `acceptance_commands`,
   `done_definition`, `evidence`, `retry_count`, and `failure_reason`.
-- Concurrency-only fields before opening more than one worker: `phase`, `lane`,
-  `risk`, `parallel_weight`, `conflicts_with`, `env_lock`, and `gate_type`.
-- Parallel meta fields before opening more than one worker:
-  `active_worker_cap`, `max_low_risk_cap`, `submitted_backlog_cap`, and
-  `total_parallel_budget`.
+- Concurrency-only fields for full parallel mode: `phase`, `lane`, `risk`,
+  `conflicts_with`, `env_lock`, and `gate_type`.
+- Parallel meta fields for full parallel mode:
+  `active_worker_cap`, `max_low_risk_cap`, and `submitted_backlog_cap`.
+- Do not add parallel meta or concurrency fields to compact or
+  `lightweight_parallel` work unless a concrete dependency, shared write
+  surface, environment lock, or retry risk requires them.
 - Use owner values that remain traceable: `master`, `unassigned`, or
   `worker:<agent-id-or-nickname>`.
 - Restrict `status` to the agreed enum.
 - Let only the master update `retry_count`.
-- Use `phase`, `lane`, and `parallel_weight` before dispatching more than one
-  worker.
+- Use `phase`, `lane`, and `risk` before dispatching full parallel work.
 - Use `gate_type: hard` for shared contracts, entrypoints, schemas, or global
   config; use `soft` for isolated follow-up work.
 - Use `unblock_condition` only when `status = blocked`.
 - Keep `evidence` short and referential, not a full log dump.
+
+## Status Enum
+
+Use only these status values:
+
+- `todo`: defined but not assigned
+- `assigned`: assigned to an agent
+- `submitted`: worker has returned a result and is awaiting acceptance
+- `accepted`: accepted by the master
+- `redo`: rejected and waiting for a replacement worker
+- `blocked`: blocked by missing information, environment, or external dependency
+- `cancelled`: no longer needed or merged into another item
 
 ## Git / Worktree Preflight Template
 
@@ -174,10 +230,72 @@ Use this before dispatching implementation workers in a git repository.
 For non-git workspaces, record the equivalent file-state boundary in plain
 language before dispatch.
 
+## Integration Protocol Template
+
+Use this when a worker returns uploaded changes, branch/worktree output, a patch,
+or any submission that must be applied or merged into the master's workspace.
+
+```md
+# Integration Protocol
+
+- item_id:
+- base_revision:
+- integration_method:
+  - uploaded_changes | branch | worktree | patch | direct_workspace
+- conflict_owner: master
+- applied_files:
+  - path/
+- post_apply_checks:
+  - command or check
+- integration_evidence:
+```
+
+Rules:
+
+- Record `base_revision` before dispatch when the workspace is a git repository.
+- Prefer one submitted item at a time; do not apply a dependent submission until
+  its dependencies are accepted.
+- Compare `applied_files` against the worker's `changed_files`,
+  `write_allowlist`, and the recorded baseline.
+- If the submission has conflicts, out-of-scope edits, or shared-surface drift,
+  reject or block it instead of patching around the problem in the master
+  session.
+- Run `post_apply_checks` after applying each accepted submission.
+
+## Codex Tool Operation Template
+
+Use this checklist before and during dispatch:
+
+```md
+# Codex Tool Operations
+
+- critical_path_owner: master
+- sidecar_candidates:
+  - ITEM-000
+- spawn_rule:
+  - spawn only material checklist items with clear role, ownership, and
+    acceptance evidence
+- fork_context:
+  - true when the worker needs current conversation, checklist, or discovered
+    repo context
+  - false when the assignment is self-contained and narrower context is safer
+- wait_rule:
+  - wait only when the master is blocked on a submitted result
+  - keep doing non-overlapping master work while workers run
+- review_rule:
+  - inspect changed_files, worker summary, evidence, and actual diff against the
+    recorded baseline before accepting
+- correction_rule:
+  - use send_input once for a small, clear, in-scope correction
+  - replace the worker or reopen exploration for broader failures
+- close_rule:
+  - close each agent after acceptance, rejection, cancellation, replacement, or
+    blocked verdict
+```
+
 ## Execution Guardrails
 
-Apply these to every subagent prompt, even when `$karpathy-guidelines` is not
-invoked explicitly:
+Apply these to every subagent prompt:
 
 - make material assumptions and blockers explicit
 - prefer the simplest sufficient path for the assigned role
@@ -186,15 +304,12 @@ invoked explicitly:
 
 ## Subagent Assignment Prompt Templates
 
-Use `$karpathy-guidelines` explicitly for implementation worker prompts by
-default. For `explorer` and validation-only worker prompts, add it only when the
-task is ambiguous, high-risk, or likely to drift beyond the assigned role.
+For risky delegated work, add explicit prompt rules for assumptions, minimal
+changes, scope control, and blockers.
 
 ### Worker Assignment Prompt Template
 
 ```text
-Apply $karpathy-guidelines for this item.
-
 You own checklist item: <ITEM-ID>
 
 Role contract:
@@ -248,11 +363,7 @@ Extra rules:
 
 ### Explorer Assignment Prompt Template
 
-Default:
-
-- Use this template with the built-in execution guardrails.
-- Prepend `Apply $karpathy-guidelines for this item.` only when the exploration
-  task is ambiguous, high-risk, or likely to drift in scope.
+Default: use this template with the built-in execution guardrails.
 
 ```text
 You own exploration for checklist item: <ITEM-ID>
@@ -300,22 +411,18 @@ Extra rules:
 
 ### Verification Worker Assignment Prompt Template
 
-Default:
-
-- Use this template with the built-in execution guardrails.
-- Prepend `Apply $karpathy-guidelines for this item.` only when validation is
-  ambiguous, high-risk, or likely to turn into diagnosis or repair work.
-- Spawn this as a `worker` agent with a validation-only prompt; do not use an
-  unsupported `validator` agent type.
+Default: use this template with the built-in execution guardrails. Spawn this as
+a `worker` agent with a verification-only prompt; do not use an unsupported
+`validator` agent type.
 
 ```text
-You own validation for checklist item: <ITEM-ID>
+You own verification for checklist item: <ITEM-ID>
 
 Role contract:
-- Run independent validation and summarize evidence only.
+- Run independent verification and summarize evidence only.
 - Do not implement fixes or expand scope.
 - Do not edit the checklist.
-- Do not modify files unless the prompt explicitly authorizes a validation-only
+- Do not modify files unless the prompt explicitly authorizes a verification-only
   artifact.
 
 Execution guardrails:
@@ -346,7 +453,7 @@ remaining_risks:
 ready_for_acceptance:
 
 Extra rules:
-- If validation fails, describe the failure precisely and stop; do not patch the
+- If verification fails, describe the failure precisely and stop; do not patch the
   code.
 - If the environment prevents a reliable verdict, report the blocker and missing
   prerequisite.
@@ -379,6 +486,22 @@ Extra rules:
 
 - run acceptance_commands
 - capture concise evidence
+
+## Step 2B: Integrate One Submission
+
+Use this step when multiple workers have submitted changes:
+
+- process one submitted item at a time
+- record or update the item's integration protocol before applying the
+  submission
+- inspect the actual diff, not only the worker summary
+- compare changed files against the recorded write_allowlist and baseline
+- integrate only after the changed files are in scope
+- rerun the item acceptance command or a shared smoke check after each
+  integration
+- accept or reject the integrated item before processing the next dependent item
+- treat conflicts, out-of-scope edits, or shared-surface drift as `redo` or
+  `blocked`; do not patch around them in the master session
 
 ## Step 3A: Accept
 
@@ -428,6 +551,12 @@ Actions:
 - close current worker
 - assign replacement worker
 
+Stop rule:
+
+- after two replacement failures on the same item, set status = blocked
+- if the same external blocker appears twice, set status = blocked
+- record the concrete unblock_condition before closing the worker
+
 ## Step 3D: Block
 
 Triggers:
@@ -463,7 +592,6 @@ replacement_agent_type:
 - active_worker_cap: 2
 - max_low_risk_cap: 3
 - submitted_backlog_cap: 2
-- total_parallel_budget: 4
 
 ## Lane Policy
 
@@ -471,7 +599,7 @@ replacement_agent_type:
 - `test`: isolated tests or fixtures; may run with `core` only if scopes do not
   overlap
 - `docs`: docs/examples only after the related contract is stable
-- `verify`: validation-only worker lane; does not take implementation ownership
+- `verify`: verification worker lane; does not take implementation ownership
 
 ## Open A New Worker Only If
 
@@ -479,7 +607,6 @@ replacement_agent_type:
 - no `write_allowlist` overlap exists with active workers
 - `conflicts_with` does not point to an active item
 - required `env_lock` is free
-- `parallel_weight` keeps the active total within `total_parallel_budget`
 - current `submitted` backlog is below the cap
 - no unresolved `hard` gate blocks the current phase
 

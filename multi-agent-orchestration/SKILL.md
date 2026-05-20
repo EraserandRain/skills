@@ -5,8 +5,9 @@ description:
   remains the master orchestrator: turn a request into acceptance-oriented
   checklist items, dispatch subagents with explicit write boundaries, validate
   submissions, replace failed workers, and keep the master session clean without
-  editing implementation directly. Use when the user wants subagents or a
-  master/worker workflow for coding, testing, documentation, or staged delivery."
+  editing implementation directly. Use only when the user explicitly wants
+  subagents, parallel agent work, or a master/worker workflow for coding,
+  testing, documentation, or staged delivery."
 ---
 
 # Multi-Agent Orchestration
@@ -15,7 +16,8 @@ description:
 
 Use this skill to run a master-only orchestration workflow. Stay responsible for
 task breakdown, checklist maintenance, agent dispatch, acceptance, retry
-routing, and session hygiene. Do not implement feature code yourself.
+routing, and session hygiene. Do not implement worker-owned checklist items or
+patch around failed worker submissions in the master session.
 
 ## Activation Preconditions
 
@@ -23,27 +25,55 @@ Use this skill only when the user explicitly asks for subagents, delegation,
 parallel agent work, or a master/worker workflow. Do not dispatch subagents for
 ordinary large tasks just because the work is broad or complex.
 
+Do not use this skill for:
+
+- ordinary large tasks when the user has not asked for subagents
+- a single immediate blocker the master can resolve directly
+- pure review, investigation, or Q&A work with no delegated execution
+
 ## Core Contract
 
 - Keep the current agent as `master`.
 - Let `worker` agents own all implementation changes.
 - Use `explorer` only for impact analysis and task shaping.
-- Use a validation-only `worker` for independent verification when risk or cost
-  justifies it.
+- Use a `verification worker` for independent verification when risk, cost,
+  or parallel submissions justify it.
 - Keep the orchestration protocol self-contained; another skill may strengthen
   execution behavior, but the role model, checklist contract, dispatch rules,
   and acceptance flow must still stand on their own.
-- Close subagents as soon as they finish, fail, or become blocked.
+- Use `references/templates.md` as the single source of truth for checklist
+  fields, status values, worker report shapes, integration protocol fields, and
+  acceptance actions.
 
 ## Codex Tool Mapping
 
 - Use `agent_type: explorer` for impact analysis, dependency mapping, and task
   shaping.
 - Use `agent_type: worker` for implementation work.
-- Use `agent_type: worker` for validation-only work with a validation-only
+- Use `agent_type: worker` for verification work with a verification-only
   prompt; do not invent a `validator` agent type.
-- Close each subagent with `close_agent` after acceptance, rejection, or a
-  blocked verdict.
+- Close each subagent with `close_agent` after acceptance, rejection,
+  cancellation, replacement, or a blocked verdict.
+
+## Codex Tool Operations
+
+- Before dispatching, decide which task remains on the master's critical path
+  and which bounded sidecar tasks can safely run in subagents.
+- Use `spawn_agent` only for material checklist items with clear role,
+  ownership, and acceptance evidence.
+- Set `fork_context: true` when the worker needs the current conversation,
+  checklist, or discovered repo context; otherwise pass only the specific
+  assignment context.
+- Use `wait_agent` only when the master is blocked on a submitted result. While
+  workers run, continue non-overlapping master work such as checklist updates,
+  baseline checks, review prep, or acceptance command planning.
+- Review returned `changed_files`, summaries, and evidence before accepting.
+  If the worker produced uploaded changes or branch/worktree output, inspect the
+  actual diff against the recorded baseline.
+- Use `send_input` at most once for a small, clear, in-scope correction. Use a
+  replacement worker or exploration for broader failures.
+- Use `close_agent` promptly after an agent is accepted, rejected, cancelled,
+  replaced, or blocked.
 
 ## Execution Guardrails
 
@@ -54,109 +84,63 @@ All subagents must:
 - stay within the assigned scope and write boundaries
 - provide concrete verification evidence or clearly stated blockers
 
-## Role-Specific Use Of `$karpathy-guidelines`
+## Extra Prompt Rules
 
-- `worker`: include `$karpathy-guidelines` explicitly by default.
-- `explorer`: include it when the task is ambiguous, high-risk, or likely to
-  drift in scope.
-- `verification worker`: include it when verification is ambiguous, high-risk,
-  or likely to turn into diagnosis or repair work.
-- In lower-risk `explorer` / verification tasks, carrying over the relevant
-  guardrails is enough; do not force explicit skill invocation as ceremony.
+For risky delegated work, add explicit prompt rules for assumptions, minimal
+changes, scope control, and blockers.
 
 ## Standard Workflow
 
 1. Normalize the request into acceptance-oriented checklist items.
-   - Use the compact checklist for a single explorer, a single worker, or a
-     clearly isolated delegation: `id`, `goal`, `status`, `owner`,
-     `write_scope`, `acceptance`, `done`, and `evidence`.
-   - Expand to the full checklist before parallel dispatch, after a failed
-     acceptance attempt, or when dependency/write-boundary details become
-     material.
-   - In full checklist mode, assign `id`, `goal`, `owner`,
-     `write_allowlist`, `write_blocklist`, `dependencies`,
-     `acceptance_commands`, `done_definition`, `status`, `evidence`,
-     `retry_count`, and `failure_reason`.
-   - Use explicit owner values such as `master`, `unassigned`, or
-     `worker:<agent-id-or-nickname>` so agent closure and handoff state remain
-     traceable.
-   - When more than one worker may run, also assign the concurrency fields:
-     `phase`, `lane`, `risk`, `parallel_weight`, `conflicts_with`, `env_lock`,
-     and `gate_type` before dispatch.
+   - Stay compact for a single explorer, single worker, or isolated delegation.
+   - Use `lightweight_parallel` for exactly two independent workers.
+   - Expand to full checklist mode only for three or more workers, shared
+     foundations, material dependencies, retries, environment locks, or explicit
+     allow/block write boundaries.
+   - Use the status enum and checklist fields defined in
+     `references/templates.md`.
    - If scope or coupling is unclear, dispatch `explorer` before creating
-     workers.
+     implementation workers.
 
-2. Scale concurrency to task risk before dispatch.
-   - Use a lightweight checklist for a single explorer, a single worker, or a
-     clearly isolated delegation task.
-   - Use phased concurrency when opening multiple workers, stabilizing shared
-     foundations, or working through unclear dependencies or coupling.
-   - Add dispatch budget fields to checklist meta before opening more than one
-     worker: `active_worker_cap`, `submitted_backlog_cap`, and
-     `total_parallel_budget`.
-   - Use `phase` to sequence work, `lane` to separate task types, and
-     `parallel_weight` against `total_parallel_budget` to cap simultaneous risk.
-   - Keep shared interfaces, schemas, entrypoints, and global config in an early
-     serial phase before wider parallel delivery.
-
-3. Dispatch bounded subagents.
+2. Dispatch bounded subagents.
    - In git repositories, record the current worktree baseline before
      dispatching implementation workers.
    - Prefer one `worker` per checklist item.
-   - Draft `worker` assignment prompts with `$karpathy-guidelines` by default.
-   - For `explorer` and validation-only worker prompts, invoke
-     `$karpathy-guidelines` explicitly only when the task is ambiguous,
-     high-risk, or likely to drift beyond its role boundary; otherwise carry
-     over the built-in execution guardrails only.
-   - Only run workers in parallel when their write scopes, validation surfaces,
-     and environment locks do not overlap.
-   - Stop dispatching and enter an integration gate when submitted items start
-     to backlog or a hard gate is unresolved.
-   - Keep concurrency conservative; default to 2 active workers, or 3 only when
-     one lane is low-risk docs/test work.
+   - Draft `worker` assignment prompts with explicit assumptions, scope control,
+     and verification expectations.
+   - Use verification workers only for evidence, not repair.
+   - Run workers in parallel only when write scopes, verification surfaces, and
+     environment locks do not overlap.
 
-4. Enforce the master boundary.
-   - Review diffs, summaries, and acceptance evidence.
-   - Update the checklist after every meaningful state change.
-   - Never patch code, tests, docs, or configuration to rescue a failed
-     submission.
-   - The master may run checks and update orchestration records, but should not
-     invent implementation fixes outside an accepted worker handoff.
-   - Do not stage, unstage, commit, reset, or rewrite history unless the user
-     explicitly asks for that exact git action.
-
-5. Accept, reject, or block.
+3. Accept, reject, or block submitted work.
    - Require each worker to return `changed_files`, `commands_run`, `result`,
      `remaining_risks`, and `ready_for_acceptance`.
-   - Run `acceptance_commands` yourself or via a validation-only worker.
-   - Move the item to `accepted`, `redo`, `blocked`, or `cancelled` based on the
-     outcome.
+   - Process submitted work one item at a time and inspect actual diffs before
+     accepting.
+   - Run acceptance checks yourself or via a verification worker.
+   - Treat conflicts, out-of-scope edits, or shared-surface drift as `redo` or
+     `blocked`; do not patch around them in the master session.
+   - Use `send_input` at most once for a small, clear, in-scope correction.
 
-6. Recover cleanly.
-   - For one small, clear, in-scope failure, use `send_input` once to ask the
-     current worker for a bounded correction.
+4. Recover cleanly.
    - For out-of-scope edits, wrong approach, unclear root cause, or a second
-     failure on the same item, record `failure_reason`, increment
-     `retry_count`, collect a short handoff summary, close the failed worker,
-     and launch a replacement.
+     failure on the same item, record `failure_reason`, increment `retry_count`,
+     close the failed worker, and launch a replacement or reopen exploration.
+   - Stop replacing workers after two replacement failures for the same item.
    - If repeated failures or write-boundary drift appear, downgrade concurrency
      before launching replacements.
-   - If repeated failures suggest bad decomposition, re-open exploration instead
-     of cycling workers blindly.
 
 ## References To Load
 
 - Read `references/templates.md` before drafting a new checklist, subagent
-  assignment prompt, dispatch budget, worktree preflight, or acceptance action.
-  Treat it as the canonical source for reusable templates and exact fields.
+  assignment prompt, dispatch budget, worktree preflight, integration protocol,
+  or acceptance action. Treat it as the canonical source for reusable templates
+  and exact fields.
 - Read `references/playbook.md` when you need the full role model, state
   machine, phase flow, or anti-pattern list.
-- Read `references/parallel-strategy.md` before opening more than one worker,
-  when shared foundations must be stabilized first, or when you need
+- Read `references/parallel-strategy.md` before full parallel dispatch, when
+  shared foundations must be stabilized first, or when you need
   dispatch/gate/backlog rules for a staged rollout.
-- Read `$karpathy-guidelines` directly when drafting a `worker` prompt, or when
-  an `explorer` / verification task needs stronger execution guardrails than the
-  built-in set.
 
 ## Response Style
 

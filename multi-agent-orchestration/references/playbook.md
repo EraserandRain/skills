@@ -3,9 +3,10 @@
 This playbook explains how to run a checklist-driven multi-agent workflow while
 keeping the current session as the `master`.
 
-Use `references/templates.md` for the exact checklist shapes, field lists,
-status values, worktree preflight, subagent prompts, acceptance flow, and
-dispatch budget rules.
+Use `references/templates.md` for exact checklist shapes, field lists, worktree
+preflight, integration protocol fields, subagent prompts, acceptance flow,
+retry stop rules, and dispatch budget rules. This playbook records the
+operating model and decision principles only.
 
 ## Role Model
 
@@ -19,8 +20,9 @@ The workflow has four roles:
 - `worker`: implementation role. Owns one checklist item, or a small set of
   same-phase items with non-overlapping write scopes. It edits only inside its
   assigned `write_allowlist`.
-- `validation worker`: validation-only `worker` agent. Runs independent checks
-  and reports evidence. It does not fix implementation failures.
+- `verification worker`: `worker` agent with a verification-only prompt. Runs
+  independent checks and reports evidence. It does not fix implementation
+  failures.
 
 All subagents must follow the shared execution guardrails:
 
@@ -29,9 +31,8 @@ All subagents must follow the shared execution guardrails:
 - stay within the assigned scope and write boundaries
 - provide concrete verification evidence or clearly stated blockers
 
-Implementation workers should explicitly use `$karpathy-guidelines`.
-Explorers and validation workers use it only when the task is ambiguous,
-high-risk, or likely to drift beyond the assigned role.
+For risky delegated work, the master should add explicit prompt rules for
+assumptions, minimal changes, scope control, and blockers.
 
 ## Codex Agent Types
 
@@ -40,9 +41,21 @@ Use the available Codex agent types directly:
 - Use `agent_type: explorer` for impact analysis, dependency mapping, and task
   shaping.
 - Use `agent_type: worker` for implementation work.
-- Use `agent_type: worker` for validation-only work with a validation-only
+- Use `agent_type: worker` for verification work with a verification-only
   prompt; do not invent a `validator` agent type.
-- Close every subagent after acceptance, rejection, or a blocked verdict.
+- Close every subagent after acceptance, rejection, cancellation, replacement,
+  or a blocked verdict.
+
+## Codex Tool Operations
+
+Before spawning agents, the master should decide which work is on the critical
+path and which bounded sidecar tasks can run without blocking the next master
+action. Do not hand off the immediate blocker when the master can resolve it
+faster locally through orchestration work such as checklist refinement,
+baseline inspection, or acceptance planning.
+
+The exact `spawn_agent`, `fork_context`, `wait_agent`, `send_input`, review,
+integration protocol, and closure checklist lives in `references/templates.md`.
 
 ## Master Boundary
 
@@ -64,7 +77,7 @@ The master should not:
 - expand a worker's scope after dispatch without updating the checklist
 - keep long-lived catch-all workers open across unrelated items
 - bury checklist state in free-form conversation
-- let validation workers become implementation workers
+- let verification workers become implementation workers
 - stage, unstage, commit, reset, or rewrite history unless the user explicitly
   asked for that exact git action
 
@@ -73,13 +86,15 @@ The master should not:
 A checklist is an acceptance contract, not a loose task list. Each item should
 let the master accept, reject, or block without stepping into implementation.
 
-Use the compact checklist from `references/templates.md` for a single explorer,
-a single worker, or a clearly isolated delegation. Expand to the full checklist
-before parallel dispatch, after a failed acceptance attempt, or when dependency
-and write-boundary details become material.
+Use the smallest checklist mode that proves acceptance:
 
-For parallel work, add the dispatch budget fields to checklist meta before
-opening workers. Then add the per-item concurrency fields defined in
+- `compact` for a single explorer, worker, or isolated delegation.
+- `lightweight_parallel` for exactly two independent workers with no overlap.
+- `full` for three or more workers, shared foundations, retries, explicit
+  allow/block boundaries, environment locks, or unclear coupling.
+
+Parallel meta and concurrency fields belong only to full parallel work unless a
+specific coordination risk appears. Status values and exact field names live in
 `references/templates.md`.
 
 Checklist items should be result-oriented. Prefer "the command accepts X and
@@ -92,15 +107,7 @@ traceable.
 
 ## State Machine
 
-Use this status set:
-
-- `todo`: defined but not assigned
-- `assigned`: assigned to an agent
-- `submitted`: worker has returned a result and is awaiting acceptance
-- `accepted`: accepted by the master
-- `redo`: rejected and waiting for a replacement worker
-- `blocked`: blocked by missing information, environment, or external dependency
-- `cancelled`: no longer needed or merged into another item
+Use the status enum defined in `references/templates.md`.
 
 Recommended transitions:
 
@@ -138,7 +145,7 @@ admission rules.
 
 ## Phase Flow
 
-For multi-worker or high-coupling tasks, use this flow:
+For full parallel or high-coupling tasks, use this flow:
 
 1. `phase-0 / intake`: master clarifies objective, hard constraints, and
    allowed delivery shape.
@@ -151,12 +158,15 @@ For multi-worker or high-coupling tasks, use this flow:
    evidence; then accepts, rejects, or blocks.
 6. `phase-5 / recovery`: master records failure details, closes failed workers,
    and launches replacements or reopens exploration.
-7. `phase-6 / final validation`: master or a validation-only worker runs final
+7. `phase-6 / final verification`: master or a verification worker runs final
    acceptance checks and records concise evidence.
 
 For a single explorer, a single worker, or a clearly isolated delegation, keep
 the flow lightweight: checklist, dispatch, acceptance, closure. Use exploration
 only when scope, coupling, or acceptance criteria are unclear.
+
+For `lightweight_parallel`, keep the same lightweight flow but accept and
+integrate returned work one item at a time.
 
 ## Failure Recovery
 
@@ -190,11 +200,14 @@ Retry and replacement guidance:
   current worker.
 - Repeated failure on the same item: re-check decomposition, boundaries, and
   acceptance criteria before retrying.
+- Two replacement failures on the same item: mark `blocked` with a concrete
+  unblock condition.
+- The same external blocker appearing twice: mark `blocked`.
 - Out-of-scope edits: reject immediately and reduce concurrency for the phase.
 - Environment or external dependency failure: mark `blocked` instead of cycling
   workers.
 
-Use `references/templates.md` for the current worker, explorer, validation, and
+Use `references/templates.md` for the current worker, explorer, verification, and
 acceptance prompt text.
 
 ## Best Practices
@@ -212,8 +225,9 @@ acceptance prompt text.
   report why it could not.
 - Keep evidence concise and referential; do not paste long logs into the
   checklist.
-- Close subagents promptly after they submit, fail, or become blocked.
-- Use a validation-only worker when risk, cost, or parallel submissions justify
+- Close subagents promptly after acceptance, rejection, cancellation,
+  replacement, or a blocked verdict.
+- Use a verification worker when risk, cost, or parallel submissions justify
   independent evidence.
 
 ## Anti-Patterns
@@ -224,7 +238,7 @@ acceptance prompt text.
 - Checklist items describe files to edit but not acceptance conditions.
 - Failures are retried without recording `failure_reason` and `retry_count`.
 - A worker stays alive across unrelated items and becomes a catch-all context.
-- A validation worker patches code while claiming to validate only.
+- A verification worker patches code while claiming to verify only.
 - A worker changes git staging state or history without explicit user approval.
 
 ## Operating Principle
