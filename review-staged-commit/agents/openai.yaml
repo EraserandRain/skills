@@ -1,4 +1,4 @@
 interface:
   display_name: "Review Staged Commit"
-  short_description: "Review staged diffs and draft one commit line"
-  default_prompt: "Use $review-staged-commit to review the staged changes only and propose one commit message line."
+  short_description: "Review staged diffs, docs drift, and draft one commit line"
+  default_prompt: "Use $review-staged-commit to review the staged changes only, fix docs/example drift when enabled by repo instructions, and propose one commit message line."
