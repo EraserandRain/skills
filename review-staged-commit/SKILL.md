@@ -19,6 +19,12 @@ description: >-
 2. Review with a code-review mindset.
    - Present findings first, ordered by severity.
    - Focus on bugs, regressions, missing tests, accidental files, and blast radius.
+   - Watch for single-source-of-truth re-implementation: a concept that already
+     has a single owning module being re-implemented in another module. If the
+     repo declares concept ownership (repo instructions such as AGENTS.md/CLAUDE.md,
+     or a registry the repo itself owns), consult that and cite the declared owner;
+     otherwise apply the judgment that a concept's logic should live in one module.
+     Report it as a finding.
    - If there are no findings, say so and mention residual risks or validation gaps.
 3. Draft one commit message.
    - Read recent history with `git log --oneline -n 20`.
