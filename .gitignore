@@ -1,0 +1,9 @@
+# Keep only the self-defined skills; ignore all third-party / official ones.
+/*
+!/.gitignore
+!/README.md
+!/karpathy-guidelines/
+!/markdown-linter-fixer/
+!/multi-agent-orchestration/
+!/docs-governance/
+!/review-staged-commit/
